@@ -288,23 +288,6 @@ def gerar_pdf(df_divergencia: pd.DataFrame, df_resultado: pd.DataFrame, data_ini
     elementos.append(montar_tabela(df_todos))
 
 
-    # ── Seção 2: Todos os matches ─────────────────────────────────────────────
-    
-    # elementos.append(Paragraph(" ", styles["Normal"]))
-    # elementos.append(Paragraph(" ", styles["Normal"]))
-    # elementos.append(Paragraph(
-    #     "<b><font size=12>Todos os Agentes com Match</font></b>",
-    #     styles["Heading2"]
-    # ))
-    # elementos.append(Paragraph(" ", styles["Normal"]))
-
-    # df_matches = (
-    #     df_resultado[df_resultado["Status"].isin(["✅ Match", "⚠ Revisar"])]
-    #     .sort_values("Diferença", ascending=False)
-    # )
-
-    # elementos.append(montar_tabela(df_matches))
-
     doc.build(elementos)
     buffer.seek(0)
     return buffer
@@ -333,20 +316,22 @@ data_inicio, data_fim = periodo
 
 col1, col2 = st.columns(2)
 
+
 with col1:
+    arquivos_censo = st.file_uploader(
+        "📊 Base do sistema / censo (XLSX) ",
+        type=["xlsx"],
+        accept_multiple_files=True,
+        key="censo",
+    )
+
+with col2:
     arquivo = st.file_uploader(
         "📄 Base de produtividade (CSV)",
         type=["csv"],
         key="csv",
     )
 
-with col2:
-    arquivos_censo = st.file_uploader(
-        "📊 Base do sistema / censo (XLSX) — pode enviar mais de um",
-        type=["xlsx"],
-        accept_multiple_files=True,
-        key="censo",
-    )
 
 # ── Processamento ─────────────────────────────────────────────────────────────
 
