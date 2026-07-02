@@ -47,9 +47,57 @@ def quebrar_nome(nome: str) -> str:
     return nome
 
 
-# WRatio já combina token_set, partial e outros — melhor que combinar manualmente
+# WRatio já combina token_set, partial e outros — mas sozinho ele pode dar
+# score alto só porque um SOBRENOME comum bate (ex.: "Martins", "Oliveira"),
+# mesmo que o primeiro nome seja outra pessoa completamente diferente. Por
+# isso adicionamos duas checagens de sanidade abaixo antes de aceitar o
+# score do WRatio.
 def calcular_score(nome1: str, nome2: str, **kwargs) -> float:
-    return fuzz.WRatio(nome1, nome2)
+    score_wratio = fuzz.WRatio(nome1, nome2)
+
+    tokens1 = nome1.split()
+    tokens2 = nome2.split()
+    if not tokens1 or not tokens2:
+        return score_wratio
+
+    # 1) Primeiro nome muito diferente → provavelmente é outra pessoa,
+    #    mesmo que o sobrenome bata (ex.: "Adriane Martins" x
+    #    "Sonia Aparecida Santos Martins Camargo").
+    score_primeiro_nome = fuzz.ratio(tokens1[0], tokens2[0])
+    if score_primeiro_nome < 85:
+        score_wratio = min(score_wratio, score_primeiro_nome)
+
+    # 2) Um nome com 1 palavra só comparado a outro com número diferente de
+    #    palavras é evidência fraca demais para um match automático
+    #    (ex.: "Ana" x "Joana Maciel", "Ana" x "Ana Julia Ferreira").
+    #    Um nome curto pode "casar" por dentro de outro (partial_ratio),
+    #    então não confiamos nesses casos sem revisão manual.
+    if min(len(tokens1), len(tokens2)) == 1 and len(tokens1) != len(tokens2):
+        score_wratio = min(score_wratio, SCORE_REVISAR - 1)
+
+    return score_wratio
+
+
+# Preposições/conectores comuns em nomes em português: ficam em minúsculo,
+# exceto quando são a primeira palavra do nome.
+CONECTORES_NOME = {"de", "da", "do", "das", "dos", "e"}
+
+
+def capitalizar_nome(nome: str) -> str:
+    if pd.isna(nome):
+        return nome
+    nome = str(nome).strip()
+    if not nome:
+        return nome
+
+    palavras   = nome.lower().split()
+    resultado  = []
+    for i, palavra in enumerate(palavras):
+        if palavra in CONECTORES_NOME and i != 0:
+            resultado.append(palavra)
+        else:
+            resultado.append(palavra[:1].upper() + palavra[1:])
+    return " ".join(resultado)
 
 
 # ── Carregamento (cache por conteúdo do arquivo, não por data) ────────────────
@@ -63,7 +111,17 @@ def carregar_censo(
     partes = []
     for b in arquivos_bytes:
         df = pd.read_excel(BytesIO(b))
-        df["Data do registro"] = pd.to_datetime(df["Data do registro"]).dt.date
+        # FIX: pd.to_datetime() sem format infere o padrão a partir das
+        # primeiras linhas (ex.: %m/%d/%Y) e quebra em datas como 30/06/2026,
+        # já que não existe mês 30. Como as datas aqui são no padrão
+        # brasileiro (dia primeiro), usamos dayfirst=True + format="mixed"
+        # para que cada valor seja interpretado individualmente e
+        # corretamente, tanto se vier como texto quanto como data nativa
+        # do Excel.
+        df["Data do registro"] = pd.to_datetime(
+            df["Data do registro"], format="mixed", dayfirst=True
+        ).dt.date
+        df["Nome do Agente"] = df["Nome do Agente"].apply(capitalizar_nome)
         partes.append(df)
     df_total = pd.concat(partes, ignore_index=True).drop_duplicates()
     return df_total[
@@ -79,7 +137,13 @@ def carregar_csv(
     data_fim: datetime.date,
 ) -> pd.DataFrame:
     df = pd.read_csv(BytesIO(arquivo_bytes))
-    df["Data"] = pd.to_datetime(df["Data"]).dt.date
+    # FIX: mesmo ajuste aplicado aqui — evita o ValueError
+    # "time data ... doesn't match format %m/%d/%Y" quando o dia do mês
+    # é maior que 12 (ex.: 30/06/2026).
+    df["Data"] = pd.to_datetime(
+        df["Data"], format="mixed", dayfirst=True
+    ).dt.date
+    df["Agente"] = df["Agente"].apply(capitalizar_nome)
     df = df[
         (df["Data"] >= data_inicio) &
         (df["Data"] <= data_fim)
@@ -312,6 +376,24 @@ def gerar_excel(
                 "Agente (Sistema)":        nome_sis,
                 "Formulário (dia)":        prod_inf,
                 "Sistema (total período)": int(prod_sis_total),
+            })
+
+    # Agentes que existem só no sistema (têm produtividade no censo, mas
+    # não foram informados no formulário) também entram aqui, com
+    # "Não encontrado" no Formulário e 0 de produtividade informada — assim
+    # eles não ficam de fora do Excel, só aparecendo hoje no resumo.
+    so_no_sistema = df_resultado[df_resultado["Agente Informado"] == "Não encontrado"]
+    for _, linha_sis in so_no_sistema.iterrows():
+        nome_sis       = linha_sis["Agente Sistema"]
+        prod_sis_total = int(linha_sis["Produtividade Sistema"])
+
+        for data in datas_com_registro:
+            linhas.append({
+                "Data":                    data,
+                "Agente (Formulário)":     "Não encontrado",
+                "Agente (Sistema)":        nome_sis,
+                "Formulário (dia)":        0,
+                "Sistema (total período)": prod_sis_total,
             })
 
     df_excel = pd.DataFrame(linhas).sort_values(["Data", "Agente (Formulário)"])
