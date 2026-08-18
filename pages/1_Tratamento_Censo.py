@@ -37,7 +37,7 @@ st.markdown(
     @media (max-width: 720px) {.metric-grid {grid-template-columns:1fr}.hero-censo{padding:1.5rem}.hero-censo h1{font-size:1.8rem}}
     </style>
     <div class="hero-censo">
-      <h1>Tratamento de Censo</h1>
+      <h1>Tratamento Censo</h1>
       <p>Envie a base, acompanhe cada etapa da validação e baixe o relatório consolidado pronto para análise.</p>
     </div>
     """,
