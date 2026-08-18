@@ -234,12 +234,21 @@ def baixar_hash(url):
         return url, "ERRO_LINK"
     except Exception: return url, "ERRO_LINK"
 
-def pre_carregar_hashes(urls, cache):
+def pre_carregar_hashes(urls, cache, progresso=None):
     urls_novas = {u for u in urls if u and str(u).strip() != "" and u not in cache}
     if not urls_novas: return
-    print(f"   📡 Baixando e convertendo {len(urls_novas)} fotos exclusivas detectadas...")
+    total = len(urls_novas)
+    print(f"   📡 Baixando e convertendo {total} fotos exclusivas detectadas...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=30) as ex:
-        for url, h in ex.map(baixar_hash, urls_novas): cache[url] = h
+        for concluida, (url, h) in enumerate(ex.map(baixar_hash, urls_novas), start=1):
+            cache[url] = h
+            if progresso and (concluida == total or concluida % max(1, total // 100) == 0):
+                fracao = concluida / total
+                progresso(
+                    0.35 + (0.35 * fracao),
+                    "Baixando e analisando as fotos",
+                    f"{concluida:,} de {total:,} imagens processadas".replace(",", "."),
+                )
 
 def identificar_duplicatas(df):
     df = df.copy()
@@ -404,8 +413,13 @@ def auditar_base_visitas(df):
 # =============================================================================
 
 
-def processar_censo(arquivo_entrada):
+def processar_censo(arquivo_entrada, progresso=None):
     """Executa a lógica oficial e devolve os relatórios em memória."""
+    def atualizar(percentual, etapa, detalhe=""):
+        if progresso:
+            progresso(percentual, etapa, detalhe)
+
+    atualizar(0.02, "Lendo a planilha", "Carregando os registros do arquivo Excel")
     print("\n📂 Lendo arquivo de dados Excel...")
     try:
         df = pd.read_excel(arquivo_entrada, dtype=str)
@@ -417,6 +431,7 @@ def processar_censo(arquivo_entrada):
     print("   🧹 Encoding reparado (mojibake 'NÃ£o' -> 'Não').")
 
     df = identificar_duplicatas(df)
+    atualizar(0.10, "Auditando a qualidade", f"{len(df):,} registros encontrados".replace(",", "."))
     print("🔍 Iniciando auditoria de qualidade...")
     df = auditar_base_visitas(df)
 
@@ -429,6 +444,7 @@ def processar_censo(arquivo_entrada):
 
     col_lat, col_lon = achar_col_gps(df, 'latitude'), achar_col_gps(df, 'longitude')
 
+    atualizar(0.20, "Localizando imagens", "Procurando links de fotos em todas as colunas")
     print("\n🔍 Escaneando a planilha inteira atrás de Links de Imagens Reais...")
     df['Links_Detectados'] = df.apply(extrair_fotos_da_linha, axis=1)
     df['URL_Prop'] = df['Links_Detectados'].apply(lambda x: x[0] if len(x) > 0 else "")
@@ -443,6 +459,7 @@ def processar_censo(arquivo_entrada):
     # =============================================================================
     # 6. MOTOR DE APROVAÇÃO DE BACKOFFICE (REGRA DA FUNDEG)
     # =============================================================================
+    atualizar(0.28, "Aplicando regras de backoffice", "Classificando aprovações e pendências")
     print("\n📝 Aplicando diretrizes de Análise e Aprovação de Visitas...")
 
     # Utiliza a função detectar_coluna que já existe no rodar.py para achar os campos
@@ -456,43 +473,50 @@ def processar_censo(arquivo_entrada):
 
         # Varredura completa no formulário inteiro (incluindo observações)
         texto_global = bloco.fillna('').apply(lambda row: ' '.join(map(str, row)).lower(), axis=1)
-        termos_salvacao = ["abandonado", "em construção", "em construcao", "uso temporário", "uso temporario", "veraneio"]
+        if texto_global.apply(lambda txt: "abandonado" in txt).any():
+            return "Aprovar - Abandonado"
+        if texto_global.apply(lambda txt: any(t in txt for t in ["em construção", "em construcao"])).any():
+            return "Aprovar - Em Construção"
+        if texto_global.apply(lambda txt: any(t in txt for t in ["uso temporário", "uso temporario", "veraneio"])).any():
+            return "Aprovar - Uso Temporário / Veraneio"
 
-        if texto_global.apply(lambda txt: any(t in txt for t in termos_salvacao)).any():
-            return "APROVAR"
+        if not motivo_serie.empty:
+            if motivo_serie.str.contains("propriedade inexistente", regex=True, na=False).any():
+                return "Aprovar - Propriedade Inexistente"
+            if motivo_serie.str.contains("propriedade totalmente produtiva", regex=True, na=False).any():
+                return "Aprovar - Propriedade Produtiva"
 
-        # Aprovações diretas
-        if not motivo_serie.empty and motivo_serie.str.contains("propriedade inexistente|propriedade totalmente produtiva", regex=True, na=False).any():
-            return "APROVAR"
+        if not alguem_serie.empty:
+            if alguem_serie.isin(["sim"]).any():
+                return "Aprovar - Visita"
+            if alguem_serie.isin(["sim, mas se recusou a responder"]).any():
+                return "Aprovar - Recusa"
 
-        if not alguem_serie.empty and alguem_serie.isin(["sim", "sim, mas se recusou a responder"]).any():
-            return "APROVAR"
-
-        # Reprovação com chance de aprovação pelo histórico (3 visitas)
-        reprova_condicional = False
-        termos_ausencia_motivo = [
-            "edificação longe da porteira",
-            "não foi localizado",
-            "não foi encontrada porteira"
+        motivo_pendencia = ""
+        termos_ausencia_alguem = [
+            "sim, mas o responsável não estava presente",
+            "sim, mas o responsavel nao estava presente",
+            "não", "nao"
         ]
-        if not motivo_serie.empty and motivo_serie.fillna('').astype(str).str.contains('|'.join(termos_ausencia_motivo), regex=True, na=False).any():
-            reprova_condicional = True
 
-        termos_ausencia_motivo = [
-            "edificação longe da porteira",
-            "não foi localizado",
-            "não foi encontrada porteira"
-        ]
-        if not motivo_serie.empty and motivo_serie.fillna('').astype(str).str.contains('|'.join(termos_ausencia_motivo), regex=True, na=False).any():
-            reprova_condicional = True
+        if not alguem_serie.empty and alguem_serie.isin(termos_ausencia_alguem).any():
+            motivo_pendencia = "Morador Ausente"
 
-        if reprova_condicional:
+        if not motivo_serie.empty:
+            if motivo_serie.fillna('').astype(str).str.contains("edificação longe da porteira", na=False).any():
+                motivo_pendencia = "Edificação Longe da Porteira"
+            elif motivo_serie.fillna('').astype(str).str.contains("não foi localizado", na=False).any():
+                motivo_pendencia = "Morador Não Localizado"
+            elif motivo_serie.fillna('').astype(str).str.contains("não foi encontrada porteira", na=False).any():
+                motivo_pendencia = "Não Encontrou Porteira"
+
+        if motivo_pendencia:
             if n_visitas >= 3:
-                return "APROVAR"
+                return f"Aprovar - {motivo_pendencia} (Histórico >= 3)"
             else:
-                return "REPROVAR"
+                return f"Reprovar - {motivo_pendencia}"
 
-        return "REPROVAR"
+        return "Reprovar - Fora do Padrão / Pendente"
 
     # Aplica a inteligência agrupando pelo 'ID_Base' que foi gerado logo acima
     mapa_aprov = {}
@@ -531,7 +555,11 @@ def processar_censo(arquivo_entrada):
     print(f"   📊 Total de pares a serem analisados: {len(pares)}")
 
     cache_hash = {}
-    pre_carregar_hashes(urls_dl, cache_hash)
+    if urls_dl:
+        atualizar(0.35, "Baixando e analisando as fotos", f"0 de {len(urls_dl):,} imagens processadas".replace(",", "."))
+    else:
+        atualizar(0.70, "Análise de imagens concluída", "Nenhum link de imagem encontrado")
+    pre_carregar_hashes(urls_dl, cache_hash, progresso)
 
     resultado = {idx: {'status': '✅ OK', 'detalhe': '', 'codigo_suspeito': '', 'similaridade': -1.0, 'desmembramento': ''} for idx in df.index}
     df_dict = df.to_dict('index')
@@ -540,6 +568,13 @@ def processar_censo(arquivo_entrada):
     total_pares = len(pares)
     print("   🔬 Analisando pares visualmente...")
     for i, (ia, ib) in enumerate(pares):
+        if progresso and (i == 0 or (i + 1) == total_pares or (i + 1) % max(1, total_pares // 100) == 0):
+            fracao = (i + 1) / total_pares if total_pares else 1
+            atualizar(
+                0.70 + (0.20 * fracao),
+                "Comparando registros",
+                f"{i + 1:,} de {total_pares:,} pares analisados".replace(",", "."),
+            )
         if i % 1000 == 0 and i > 0:
             print(f"      {i}/{total_pares} pares processados...")
         row_A, row_B = df_dict[ia], df_dict[ib]
@@ -598,6 +633,7 @@ def processar_censo(arquivo_entrada):
                 elif inconsistencia_parcial: aplicar_status(resultado, idx_p, '👀 REVISÃO - FOTO PARECIDA', f'Possível ângulo diferente: {cod_o} ({sim_max:.1f}% sim).', cod_o)
                 elif dist is not None and dist <= 10: aplicar_status(resultado, idx_p, '⚠️ ALERTA DE PROXIMIDADE', f'GPS muito colado ({int(dist)}m) a outro cadastro.', cod_o)
 
+    atualizar(0.92, "Finalizando as classificações", "Consolidando alertas e inconsistências")
     print("   ✅ Análise visual concluída. Finalizando status...")
     for idx, row in df_dict.items():
         if resultado[idx]['status'] != '✅ OK': continue
@@ -636,6 +672,7 @@ def processar_censo(arquivo_entrada):
     # =============================================================================
     # 9. EXPORTAÇÃO EXCEL COM DICIONÁRIO
     # =============================================================================
+    atualizar(0.97, "Preparando o resultado", "Montando as abas do relatório")
     print("\n📊 Gerando relatório Excel...")
     df_reprovados = df[(df['Erros_Logicos'] != '') | (~df['Status_Validacao'].isin({'✅ OK', '⚠️ AVISO', '⚠️ AVISO - FOTO OK, SEM GPS'}))].copy()
 
