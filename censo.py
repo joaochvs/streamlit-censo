@@ -12,7 +12,7 @@ pagina = st.navigation(
         "Ferramentas": [
             st.Page(
                 "pages/1_Tratamento_Censo.py",
-                title="Tratamento de Censo",
+                title="Tratamento Censo",
                 icon="📊",
                 default=True,
             ),
