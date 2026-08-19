@@ -24,7 +24,7 @@ st.markdown(
     div[data-testid="stButton"] button, div[data-testid="stDownloadButton"] button {
         min-height: 3rem; border-radius: 12px; font-weight: 700;
     }
-    .metric-grid {display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; margin:1rem 0 1.5rem;}
+    .metric-grid {display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin:1rem 0 1.5rem;}
     .metric-card {
         padding:1.25rem 1.4rem; border:1px solid rgba(128,128,128,.22);
         border-radius:16px; background:rgba(128,128,128,.055);
@@ -56,7 +56,7 @@ def gerar_excel(relatorios: dict[str, pd.DataFrame]) -> bytes:
     return buffer.getvalue()
 
 
-def calcular_erro_backoffice(base: pd.DataFrame) -> tuple[float | None, int, int]:
+def calcular_erros_backoffice(base: pd.DataFrame) -> dict | None:
     def normalizar_texto(valor) -> str:
         texto = unicodedata.normalize("NFKD", str(valor))
         texto = "".join(c for c in texto if not unicodedata.combining(c)).lower()
@@ -72,32 +72,47 @@ def calcular_erro_backoffice(base: pd.DataFrame) -> tuple[float | None, int, int
 
     # Seleciona pela presença real de "Reprovado". Isso evita depender de
     # espaços, acentos ou pequenas variações no nome da coluna de origem.
-    contagens_reprovados = {}
+    contagens_decisoes = {}
     series_normalizadas = {}
     for coluna in candidatas_bko:
         serie = base[coluna].fillna("").map(normalizar_texto)
         series_normalizadas[coluna] = serie
-        contagens_reprovados[coluna] = int(serie.str.startswith("reprov").sum())
+        decisoes = serie.str.startswith("aprov") | serie.str.startswith("reprov")
+        contagens_decisoes[coluna] = int(decisoes.sum())
 
     col_situacao_bko = (
-        max(candidatas_bko, key=lambda c: contagens_reprovados[c])
+        max(candidatas_bko, key=lambda c: contagens_decisoes[c])
         if candidatas_bko
         else None
     )
 
     if not col_status_correto or not col_situacao_bko:
-        return None, 0, 0
+        return None
 
     esperado = base[col_status_correto].fillna("").map(normalizar_texto)
     realizado = series_normalizadas[col_situacao_bko]
     deveria_aprovar = esperado.str.startswith("aprovar")
+    deveria_reprovar = esperado.str.startswith("reprovar")
+    aprovados_pelo_bko = realizado.str.startswith("aprov")
     reprovados_pelo_bko = realizado.str.startswith("reprov")
-    recusas_que_deveriam_ser_aprovadas = reprovados_pelo_bko & deveria_aprovar
 
-    total_avaliado = int(reprovados_pelo_bko.sum())
-    total_erros = int(recusas_que_deveriam_ser_aprovadas.sum())
-    taxa = (total_erros / total_avaliado * 100) if total_avaliado else 0.0
-    return taxa, total_erros, total_avaliado
+    total_aprovados = int(aprovados_pelo_bko.sum())
+    erros_aprovados = int((aprovados_pelo_bko & deveria_reprovar).sum())
+    total_recusas = int(reprovados_pelo_bko.sum())
+    erros_recusas = int((reprovados_pelo_bko & deveria_aprovar).sum())
+
+    return {
+        "aprovados": {
+            "taxa": (erros_aprovados / total_aprovados * 100) if total_aprovados else None,
+            "erros": erros_aprovados,
+            "total": total_aprovados,
+        },
+        "recusas": {
+            "taxa": (erros_recusas / total_recusas * 100) if total_recusas else None,
+            "erros": erros_recusas,
+            "total": total_recusas,
+        },
+    }
 
 
 def executar_tratamento(arquivo_bytes: bytes, progresso):
@@ -143,18 +158,25 @@ if tarefa_bko and "relatorios" not in st.session_state:
 if "relatorios" in st.session_state:
     relatorios = st.session_state["relatorios"]
     base = relatorios["Base_Consolidada"]
-    taxa_erro, total_erros, total_avaliado = calcular_erro_backoffice(base)
+    erros_bko = calcular_erros_backoffice(base)
 
     registros_formatados = f"{len(base):,}".replace(",", ".")
-    if taxa_erro is None:
-        taxa_formatada = "N/D"
-        nota_taxa = "A coluna Situação Backoffice não foi encontrada."
+    if erros_bko is None:
+        taxa_aprovados = taxa_recusas = "N/D"
+        nota_aprovados = nota_recusas = "As colunas de decisão do Backoffice não foram encontradas."
     else:
-        taxa_formatada = f"{taxa_erro:.1f}%"
-        nota_taxa = (
-            f"{total_erros:,} recusa(s) deveriam ser aprovadas entre "
-            f"{total_avaliado:,} recusa(s) feitas pelo Backoffice.".replace(",", ".")
-        )
+        aprovados = erros_bko["aprovados"]
+        recusas = erros_bko["recusas"]
+        taxa_aprovados = f"{aprovados['taxa']:.1f}%" if aprovados["taxa"] is not None else "N/D"
+        taxa_recusas = f"{recusas['taxa']:.1f}%" if recusas["taxa"] is not None else "N/D"
+        nota_aprovados = (
+            f"{aprovados['erros']:,} aprovado(s) deveriam ser recusados entre "
+            f"{aprovados['total']:,} aprovação(ões) do Backoffice."
+        ).replace(",", ".")
+        nota_recusas = (
+            f"{recusas['erros']:,} recusa(s) deveriam ser aprovadas entre "
+            f"{recusas['total']:,} recusa(s) do Backoffice."
+        ).replace(",", ".")
 
     st.markdown(
         f"""
@@ -165,9 +187,14 @@ if "relatorios" in st.session_state:
             <div class="metric-note">Linhas analisadas na base consolidada</div>
           </div>
           <div class="metric-card">
-            <div class="metric-label">Taxa de erro do Backoffice</div>
-            <div class="metric-value">{taxa_formatada}</div>
-            <div class="metric-note">{nota_taxa}</div>
+            <div class="metric-label">Taxa de erro — Aprovações</div>
+            <div class="metric-value">{taxa_aprovados}</div>
+            <div class="metric-note">{nota_aprovados}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Taxa de erro — Recusas</div>
+            <div class="metric-value">{taxa_recusas}</div>
+            <div class="metric-note">{nota_recusas}</div>
           </div>
         </div>
         """,
