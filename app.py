@@ -18,7 +18,7 @@ pagina = st.navigation(
             ),
             st.Page(
                 "pages/3_Desmembramentos.py",
-                title="Desmebramento",
+                title="Desmembramento",
                 icon="🔀",
             ),
             st.Page(
