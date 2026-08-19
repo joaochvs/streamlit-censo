@@ -24,7 +24,7 @@ st.markdown(
     @media (max-width: 720px) {.hero-desm{padding:1.5rem}.hero-desm h1{font-size:1.8rem}}
     </style>
     <div class="hero-desm">
-      <h1>Desmebramento</h1>
+      <h1>Desmembramento</h1>
       <p>Valide imagens, coordenadas e regras da base e gere o arquivo consolidado em CSV.</p>
     </div>
     """,
@@ -56,22 +56,22 @@ else:
         st.session_state.pop("desmembramentos_resultado", None)
         gerenciador = obter_gerenciador_tarefas()
         tarefa_id = gerenciador.iniciar(executar, arquivo.getvalue())
-        st.session_state["tarefa_desmebramento"] = tarefa_id
-        st.query_params["tarefa_desmebramento"] = tarefa_id
+        st.session_state["tarefa_desmembramento"] = tarefa_id
+        st.query_params["tarefa_desmembramento"] = tarefa_id
 
-tarefa_desmebramento = (
-    st.session_state.get("tarefa_desmebramento")
-    or st.query_params.get("tarefa_desmebramento")
+tarefa_desmembramento = (
+    st.session_state.get("tarefa_desmembramento")
+    or st.query_params.get("tarefa_desmembramento")
 )
-if tarefa_desmebramento and "desmembramentos_resultado" not in st.session_state:
+if tarefa_desmembramento and "desmembramentos_resultado" not in st.session_state:
     try:
-        resultado, csv_saida = acompanhar_tarefa(tarefa_desmebramento)
+        resultado, csv_saida = acompanhar_tarefa(tarefa_desmembramento)
         st.session_state["desmembramentos_resultado"] = resultado
         st.session_state["desmembramentos_csv"] = csv_saida
         nome_base = Path(arquivo.name).stem if arquivo is not None else "base"
-        st.session_state["desmembramentos_nome"] = f"{nome_base}_desmebramento.csv"
+        st.session_state["desmembramentos_nome"] = f"{nome_base}_desmembramento.csv"
     except Exception as erro:
-        st.session_state.pop("tarefa_desmebramento", None)
+        st.session_state.pop("tarefa_desmembramento", None)
         st.error(f"Não foi possível processar o arquivo: {erro}")
 
 if "desmembramentos_resultado" in st.session_state:
