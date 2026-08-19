@@ -559,15 +559,110 @@ def gerar_excel(
 
 # ── Interface Streamlit ───────────────────────────────────────────────────────
 
-st.title("Divergência de Produtividade — Agentes")
+st.markdown(
+    """
+    <style>
+        .block-container {
+            max-width: 1380px;
+            padding-top: 2.2rem;
+            padding-bottom: 3rem;
+        }
+        .prod-hero {
+            padding: 2rem 2.2rem;
+            margin-bottom: 1.4rem;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 22px;
+            background:
+                radial-gradient(circle at 88% 18%, rgba(34, 211, 238, 0.32), transparent 28%),
+                linear-gradient(135deg, #172554 0%, #1d4ed8 58%, #0e7490 100%);
+            box-shadow: 0 18px 42px rgba(2, 6, 23, 0.24);
+            color: white;
+        }
+        .prod-hero h1 {
+            margin: 0 0 0.45rem;
+            color: white;
+            font-size: clamp(2rem, 4vw, 3.1rem);
+            letter-spacing: -0.04em;
+        }
+        .prod-hero p {
+            max-width: 780px;
+            margin: 0;
+            color: rgba(255, 255, 255, 0.86);
+            font-size: 1.02rem;
+            line-height: 1.6;
+        }
+        .prod-section-title {
+            margin: 0 0 0.25rem;
+            font-size: 1.12rem;
+            font-weight: 750;
+        }
+        .prod-section-copy {
+            margin: 0 0 1rem;
+            color: #94a3b8;
+            font-size: 0.92rem;
+        }
+        .prod-metrics {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1rem;
+            margin: 1.25rem 0;
+        }
+        .prod-metric {
+            min-height: 134px;
+            padding: 1.25rem 1.35rem;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 18px;
+            background: linear-gradient(145deg, rgba(30, 41, 59, 0.78), rgba(15, 23, 42, 0.9));
+            box-shadow: 0 12px 30px rgba(2, 6, 23, 0.15);
+        }
+        .prod-metric span {
+            display: block;
+            margin-bottom: 0.55rem;
+            color: #94a3b8;
+            font-size: 0.86rem;
+            font-weight: 650;
+            letter-spacing: 0.02em;
+        }
+        .prod-metric strong {
+            color: #f8fafc;
+            font-size: 2.15rem;
+            line-height: 1;
+        }
+        .prod-metric.alert strong { color: #fb7185; }
+        div[data-testid="stFileUploader"] {
+            padding: 0.35rem 0;
+        }
+        div[data-testid="stDownloadButton"] button {
+            min-height: 3rem;
+            border-radius: 12px;
+            font-weight: 700;
+        }
+        @media (max-width: 760px) {
+            .prod-hero { padding: 1.55rem; }
+            .prod-metrics { grid-template-columns: 1fr; }
+        }
+    </style>
+    <div class="prod-hero">
+        <h1>Produtividade dos Agentes</h1>
+        <p>Compare a produtividade informada pelos agentes com os registros do sistema e identifique divergências de forma clara.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ── Período ───────────────────────────────────────────────────────────────────
 
-periodo = st.date_input(
-    "Selecione o período:",
-    value=(datetime.date.today(), datetime.date.today()),
-    format="DD/MM/YYYY",
-)
+with st.container(border=True):
+    st.markdown('<p class="prod-section-title">📅 Período da análise</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="prod-section-copy">Defina o intervalo que será considerado nos dois arquivos.</p>',
+        unsafe_allow_html=True,
+    )
+    periodo = st.date_input(
+        "Selecione o período:",
+        value=(datetime.date.today(), datetime.date.today()),
+        format="DD/MM/YYYY",
+    )
 
 if len(periodo) < 2:
     st.info("Selecione também a data final do período.")
@@ -577,22 +672,28 @@ data_inicio, data_fim = periodo
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 
-col1, col2 = st.columns(2)
-
-with col1:
-    arquivos_censo = st.file_uploader(
-        "📊 Base do sistema / censo (XLSX)",
-        type=["xlsx"],
-        accept_multiple_files=True,
-        key="censo",
+with st.container(border=True):
+    st.markdown('<p class="prod-section-title">📂 Arquivos para comparação</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="prod-section-copy">Carregue as bases correspondentes ao mesmo período selecionado.</p>',
+        unsafe_allow_html=True,
     )
+    col1, col2 = st.columns(2)
 
-with col2:
-    arquivo_csv = st.file_uploader(
-        "📄 Base de produtividade (CSV)",
-        type=["csv"],
-        key="csv",
-    )
+    with col1:
+        arquivos_censo = st.file_uploader(
+            "📊 Base do sistema / censo (XLSX)",
+            type=["xlsx"],
+            accept_multiple_files=True,
+            key="censo",
+        )
+
+    with col2:
+        arquivo_csv = st.file_uploader(
+            "📄 Base de produtividade (CSV)",
+            type=["csv"],
+            key="csv",
+        )
 
 # ── Processamento ─────────────────────────────────────────────────────────────
 
@@ -626,25 +727,49 @@ if arquivo_csv and arquivos_censo:
     ].sort_values("Diferença", ascending=False)
 
     # ── Métricas ──────────────────────────────────────────────────────────────
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Agentes no formulário", len(df_csv_prod))
-    m2.metric("Agentes no sistema",    len(df_censo_prod))
-    m3.metric("Com divergência",       len(df_divergencia))
-
-    st.divider()
+    st.markdown(
+        f"""
+        <div class="prod-metrics">
+            <div class="prod-metric">
+                <span>AGENTES NO FORMULÁRIO</span>
+                <strong>{len(df_csv_prod)}</strong>
+            </div>
+            <div class="prod-metric">
+                <span>AGENTES NO SISTEMA</span>
+                <strong>{len(df_censo_prod)}</strong>
+            </div>
+            <div class="prod-metric alert">
+                <span>COM DIVERGÊNCIA</span>
+                <strong>{len(df_divergencia)}</strong>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     # ── Tabelas ───────────────────────────────────────────────────────────────
-    st.subheader("📋 Produtividade Informada")
-    st.dataframe(df_csv_prod.drop(columns="nome_normalizado"), use_container_width=True)
+    with st.container(border=True):
+        st.subheader("📋 Produtividade informada")
+        st.caption("Resumo dos registros enviados pelos agentes.")
+        st.dataframe(
+            df_csv_prod.drop(columns="nome_normalizado"),
+            use_container_width=True,
+            hide_index=True,
+        )
 
-    st.subheader("🚨 Quem informou mais do que fez")
-    st.dataframe(df_divergencia, use_container_width=True)
+    with st.container(border=True):
+        st.subheader("🚨 Quem informou mais do que fez")
+        st.caption("Agentes cuja quantidade informada ficou acima dos registros encontrados no sistema.")
+        st.dataframe(df_divergencia, use_container_width=True, hide_index=True)
 
-    st.subheader("🔍 Comparativo Final")
-    st.dataframe(
-        df_resultado.sort_values(["Status", "Diferença"], ascending=[True, False]),
-        use_container_width=True,
-    )
+    with st.container(border=True):
+        st.subheader("🔍 Comparativo final")
+        st.caption("Visão consolidada da correspondência e das diferenças encontradas.")
+        st.dataframe(
+            df_resultado.sort_values(["Status", "Diferença"], ascending=[True, False]),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     # ── Downloads ─────────────────────────────────────────────────────────────
     sufixo = (
@@ -653,24 +778,29 @@ if arquivo_csv and arquivos_censo:
         else f"{data_inicio}_a_{data_fim}"
     )
 
-    col_pdf, col_xls = st.columns(2)
+    with st.container(border=True):
+        st.subheader("⬇️ Exportar relatórios")
+        st.caption("Baixe o resultado consolidado no formato mais adequado para o seu uso.")
+        col_pdf, col_xls = st.columns(2)
 
-    with col_pdf:
-        pdf = gerar_pdf(df_resultado, data_inicio, data_fim)
-        st.download_button(
-            label="📄 Baixar Relatório PDF",
-            data=pdf,
-            file_name=f"relatorio_divergencia_{sufixo}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
+        with col_pdf:
+            pdf = gerar_pdf(df_resultado, data_inicio, data_fim)
+            st.download_button(
+                label="📄 Baixar Relatório PDF",
+                data=pdf,
+                file_name=f"relatorio_divergencia_{sufixo}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
 
-    with col_xls:
-        excel = gerar_excel(df_resultado, df_csv, data_inicio, data_fim)
-        st.download_button(
-            label="📊 Baixar Diário Excel",
-            data=excel,
-            file_name=f"diario_produtividade_{sufixo}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
+        with col_xls:
+            excel = gerar_excel(df_resultado, df_csv, data_inicio, data_fim)
+            st.download_button(
+                label="📊 Baixar Diário Excel",
+                data=excel,
+                file_name=f"diario_produtividade_{sufixo}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+else:
+    st.info("Selecione o período e envie os dois tipos de arquivo para iniciar a comparação.", icon="ℹ️")
