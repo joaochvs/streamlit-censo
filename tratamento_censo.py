@@ -419,12 +419,39 @@ def processar_censo(arquivo_entrada, progresso=None):
         if progresso:
             progresso(percentual, etapa, detalhe)
 
-    atualizar(0.02, "Lendo a planilha", "Carregando os registros do arquivo Excel")
-    print("\n📂 Lendo arquivo de dados Excel...")
+    atualizar(0.02, "Lendo a base", "Identificando o formato e carregando os registros")
+    print("\n📂 Lendo arquivo de dados...")
     try:
-        df = pd.read_excel(arquivo_entrada, dtype=str)
+        posicao_inicial = arquivo_entrada.tell() if hasattr(arquivo_entrada, "tell") else None
+        assinatura = arquivo_entrada.read(4) if hasattr(arquivo_entrada, "read") else b""
+        if posicao_inicial is not None:
+            arquivo_entrada.seek(posicao_inicial)
+
+        # Arquivos XLSX são contêineres ZIP e começam com a assinatura PK.
+        # Para caminhos locais, a extensão também é considerada.
+        nome_arquivo = str(getattr(arquivo_entrada, "name", arquivo_entrada)).lower()
+        eh_excel = (
+            assinatura.startswith(b"PK")
+            or assinatura == b"\xd0\xcf\x11\xe0"
+            or nome_arquivo.endswith((".xlsx", ".xls"))
+        )
+
+        if eh_excel:
+            df = pd.read_excel(arquivo_entrada, dtype=str)
+        else:
+            conteudo = arquivo_entrada.read() if hasattr(arquivo_entrada, "read") else None
+            ultimo_erro = None
+            for codificacao in ("utf-8-sig", "utf-8", "latin-1"):
+                try:
+                    fonte = BytesIO(conteudo) if conteudo is not None else arquivo_entrada
+                    df = pd.read_csv(fonte, dtype=str, sep=None, engine="python", encoding=codificacao)
+                    break
+                except UnicodeDecodeError as erro:
+                    ultimo_erro = erro
+            else:
+                raise ultimo_erro or ValueError("Não foi possível identificar a codificação do CSV.")
     except Exception as e:
-        raise ValueError(f"Não foi possível ler o arquivo Excel: {e}") from e
+        raise ValueError(f"Não foi possível ler o arquivo Excel ou CSV: {e}") from e
 
     # ✏️ NOVO: corrige o "NÃ£o" (mojibake) já na entrada, antes de qualquer regra.
     df = reparar_mojibake(df)

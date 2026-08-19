@@ -1,14 +1,12 @@
-import concurrent.futures
 from io import BytesIO
 from pathlib import Path
-import queue
-import time
 import unicodedata
 
 import pandas as pd
 import streamlit as st
 
 from tratamento_censo import processar_censo
+from tarefas_background import acompanhar_tarefa, obter_gerenciador_tarefas
 
 
 st.markdown(
@@ -37,8 +35,8 @@ st.markdown(
     @media (max-width: 720px) {.metric-grid {grid-template-columns:1fr}.hero-censo{padding:1.5rem}.hero-censo h1{font-size:1.8rem}}
     </style>
     <div class="hero-censo">
-      <h1>Tratamento Censo</h1>
-      <p>Envie a base, acompanhe cada etapa da validação e baixe o relatório consolidado pronto para análise.</p>
+      <h1>Bases BKO</h1>
+      <p>Envie a base do Backoffice, acompanhe cada etapa da validação e baixe o relatório consolidado pronto para análise.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -110,76 +108,37 @@ def executar_tratamento(arquivo_bytes: bytes, progresso):
 
 with st.container(border=True):
     st.subheader("Enviar base para tratamento")
-    st.caption("Formatos aceitos: Excel .xlsx ou .xls")
+    st.caption("Formatos aceitos: Excel (.xlsx ou .xls) e CSV (.csv)")
     arquivo = st.file_uploader(
         "Selecione o arquivo",
-        type=["xlsx", "xls"],
+        type=["xlsx", "xls", "csv"],
         label_visibility="collapsed",
     )
 
 if arquivo is None:
-    st.info("📂 Selecione uma planilha para iniciar o tratamento.")
+    st.info("📂 Selecione uma planilha Excel ou CSV para iniciar o tratamento.")
 else:
     tamanho_mb = arquivo.size / (1024 * 1024)
     st.caption(f"✓ {arquivo.name}  •  {tamanho_mb:.1f} MB")
 
     if st.button("Processar arquivo", type="primary", use_container_width=True):
-        executor = None
-        try:
-            inicio = time.perf_counter()
-            eventos = queue.Queue()
-            etapa_atual = [0.0, "Preparando o processamento", "Organizando o arquivo enviado"]
+        st.session_state.pop("relatorios", None)
+        gerenciador = obter_gerenciador_tarefas()
+        tarefa_id = gerenciador.iniciar(executar_tratamento, arquivo.getvalue())
+        st.session_state["tarefa_bko"] = tarefa_id
+        st.query_params["tarefa_bko"] = tarefa_id
 
-            def registrar_progresso(percentual, etapa, detalhe=""):
-                eventos.put((percentual, etapa, detalhe))
-
-            painel = st.status("Preparando o processamento", expanded=True)
-            barra = st.progress(0)
-            detalhes = st.empty()
-            cronometro = st.empty()
-
-            def atualizar_painel():
-                while True:
-                    try:
-                        etapa_atual[:] = eventos.get_nowait()
-                    except queue.Empty:
-                        break
-                percentual, etapa, detalhe = etapa_atual
-                decorrido = time.perf_counter() - inicio
-                minutos, segundos = divmod(int(decorrido), 60)
-                painel.update(label=etapa, state="running", expanded=True)
-                barra.progress(min(100, max(0, int(percentual * 100))))
-                detalhes.markdown(f"**{detalhe}**" if detalhe else "")
-                cronometro.markdown(f"⏱️ **Tempo decorrido** &nbsp; `{minutos:02d}:{segundos:02d}`")
-
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-            futuro = executor.submit(executar_tratamento, arquivo.getvalue(), registrar_progresso)
-
-            # O processamento roda em segundo plano; este laço mantém o
-            # cronômetro fluido mesmo durante downloads demorados.
-            while not futuro.done():
-                atualizar_painel()
-                time.sleep(0.25)
-
-            atualizar_painel()
-            relatorios, excel_tratado = futuro.result()
-            st.session_state["relatorios"] = relatorios
-            st.session_state["excel_tratado"] = excel_tratado
-            st.session_state["nome_saida"] = f"{Path(arquivo.name).stem}_tratado.xlsx"
-            duracao = time.perf_counter() - inicio
-            minutos, segundos = divmod(int(duracao), 60)
-            barra.progress(100)
-            detalhes.markdown("✅ **Arquivo tratado e pronto para download.**")
-            cronometro.markdown(f"⏱️ **Tempo total** &nbsp; `{minutos:02d}:{segundos:02d}`")
-            painel.update(label="Processamento concluído", state="complete", expanded=False)
-        except Exception as erro:
-            st.session_state.pop("relatorios", None)
-            if "painel" in locals():
-                painel.update(label="O processamento foi interrompido", state="error", expanded=True)
-            st.error(f"Não foi possível processar o arquivo: {erro}")
-        finally:
-            if executor:
-                executor.shutdown(wait=False)
+tarefa_bko = st.session_state.get("tarefa_bko") or st.query_params.get("tarefa_bko")
+if tarefa_bko and "relatorios" not in st.session_state:
+    try:
+        relatorios, excel_tratado = acompanhar_tarefa(tarefa_bko)
+        st.session_state["relatorios"] = relatorios
+        st.session_state["excel_tratado"] = excel_tratado
+        nome_base = Path(arquivo.name).stem if arquivo is not None else "base_bko"
+        st.session_state["nome_saida"] = f"{nome_base}_tratado.xlsx"
+    except Exception as erro:
+        st.session_state.pop("tarefa_bko", None)
+        st.error(f"Não foi possível processar o arquivo: {erro}")
 
 if "relatorios" in st.session_state:
     relatorios = st.session_state["relatorios"]

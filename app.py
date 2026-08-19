@@ -12,7 +12,7 @@ pagina = st.navigation(
         "Ferramentas": [
             st.Page(
                 "pages/1_Tratamento_Censo.py",
-                title="Tratamento Censo",
+                title="Bases BKO",
                 icon="📊",
                 default=True,
             ),
@@ -20,6 +20,11 @@ pagina = st.navigation(
                 "pages/2_Produtividade_Agentes.py",
                 title="Produtividade dos Agentes",
                 icon="📈",
+            ),
+            st.Page(
+                "pages/3_Desmembramentos.py",
+                title="Desmebramento",
+                icon="🧩",
             ),
         ]
     }
