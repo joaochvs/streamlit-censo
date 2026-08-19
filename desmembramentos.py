@@ -746,5 +746,9 @@ def processar_desmembramentos(arquivo_entrada, progresso=None):
 
     df_saida = df_saida.copy()
     df_saida['apontamento_ia'] = df_saida['Status_Validacao'].apply(classificar_suave)
+    # Na origem, campos vazios foram convertidos para texto para preservar os
+    # tipos durante as regras. Antes da exportação, restaura esses marcadores
+    # para que o CSV tenha células realmente vazias.
+    df_saida = df_saida.replace(r'^\s*(?:nan|none|<na>|null)\s*$', '', regex=True)
     atualizar(1.0, 'Processamento concluído', f'{len(df_saida):,} registros preparados'.replace(',', '.'))
     return df_saida

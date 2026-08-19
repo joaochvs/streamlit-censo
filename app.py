@@ -17,14 +17,14 @@ pagina = st.navigation(
                 default=True,
             ),
             st.Page(
+                "pages/3_Desmembramentos.py",
+                title="Desmebramento",
+                icon="🔀",
+            ),
+            st.Page(
                 "pages/2_Produtividade_Agentes.py",
                 title="Produtividade dos Agentes",
                 icon="📈",
-            ),
-            st.Page(
-                "pages/3_Desmembramentos.py",
-                title="Desmebramento",
-                icon="🧩",
             ),
         ]
     }
