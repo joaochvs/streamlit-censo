@@ -1,5 +1,6 @@
 import sys
 import subprocess
+import csv
 import math
 import os
 import re
@@ -38,6 +39,50 @@ from PIL import Image
 from io import BytesIO
 import imagehash
 from sklearn.neighbors import BallTree
+
+
+def ler_csv_flexivel(conteudo):
+    """Lê CSVs comuns e tolera aspas malformadas exportadas por outros sistemas."""
+    ultimo_erro = None
+    for codificacao in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            return pd.read_csv(
+                BytesIO(conteudo),
+                dtype=str,
+                sep=None,
+                engine="python",
+                encoding=codificacao,
+            )
+        except UnicodeDecodeError as erro:
+            ultimo_erro = erro
+            continue
+        except (pd.errors.ParserError, csv.Error) as erro:
+            ultimo_erro = erro
+
+        # Alguns sistemas geram campos com aspas abertas ou fechadas no meio
+        # do texto. Nesse caso, detecta o separador sem interpretar aspas.
+        try:
+            texto = conteudo.decode(codificacao)
+            linhas = [linha for linha in texto.splitlines() if linha.strip()][:20]
+            separadores = (";", ",", "\t", "|")
+            separador = max(
+                separadores,
+                key=lambda candidato: sum(linha.count(candidato) for linha in linhas),
+            )
+            if not linhas or not any(separador in linha for linha in linhas):
+                continue
+            return pd.read_csv(
+                BytesIO(conteudo),
+                dtype=str,
+                sep=separador,
+                engine="python",
+                encoding=codificacao,
+                quoting=csv.QUOTE_NONE,
+            )
+        except (UnicodeDecodeError, pd.errors.ParserError, csv.Error) as erro:
+            ultimo_erro = erro
+
+    raise ultimo_erro or ValueError("Não foi possível identificar o formato do CSV.")
 
 # =============================================================================
 # ✏️ NOVO: REPARO DE ENCODING (corrige "NÃ£o" -> "Não")
@@ -442,16 +487,9 @@ def processar_censo(arquivo_entrada, progresso=None):
             df = pd.read_excel(arquivo_entrada, dtype=str)
         else:
             conteudo = arquivo_entrada.read() if hasattr(arquivo_entrada, "read") else None
-            ultimo_erro = None
-            for codificacao in ("utf-8-sig", "utf-8", "latin-1"):
-                try:
-                    fonte = BytesIO(conteudo) if conteudo is not None else arquivo_entrada
-                    df = pd.read_csv(fonte, dtype=str, sep=None, engine="python", encoding=codificacao)
-                    break
-                except UnicodeDecodeError as erro:
-                    ultimo_erro = erro
-            else:
-                raise ultimo_erro or ValueError("Não foi possível identificar a codificação do CSV.")
+            if conteudo is None:
+                raise ValueError("O conteúdo do CSV não pôde ser carregado.")
+            df = ler_csv_flexivel(conteudo)
     except Exception as e:
         raise ValueError(f"Não foi possível ler o arquivo Excel ou CSV: {e}") from e
 
