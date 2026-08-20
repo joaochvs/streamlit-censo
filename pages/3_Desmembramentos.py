@@ -68,11 +68,17 @@ if tarefa_desmembramento and "desmembramentos_resultado" not in st.session_state
         resultado, csv_saida = acompanhar_tarefa(tarefa_desmembramento)
         st.session_state["desmembramentos_resultado"] = resultado
         st.session_state["desmembramentos_csv"] = csv_saida
+        st.session_state.pop("tarefa_desmembramento", None)
+        st.query_params.pop("tarefa_desmembramento", None)
         nome_base = Path(arquivo.name).stem if arquivo is not None else "base"
         st.session_state["desmembramentos_nome"] = f"{nome_base}_desmembramento.csv"
     except Exception as erro:
         st.session_state.pop("tarefa_desmembramento", None)
-        st.error(f"Não foi possível processar o arquivo: {erro}")
+        st.query_params.pop("tarefa_desmembramento", None)
+        if str(erro) == "A tarefa não está mais disponível no servidor.":
+            st.info("A tarefa anterior expirou após uma reinicialização do servidor. Envie o arquivo novamente.")
+        else:
+            st.error(f"Não foi possível processar o arquivo: {erro}")
 
 if "desmembramentos_resultado" in st.session_state:
     resultado = st.session_state["desmembramentos_resultado"]

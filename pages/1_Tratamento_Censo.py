@@ -149,11 +149,17 @@ if tarefa_bko and "relatorios" not in st.session_state:
         relatorios, excel_tratado = acompanhar_tarefa(tarefa_bko)
         st.session_state["relatorios"] = relatorios
         st.session_state["excel_tratado"] = excel_tratado
+        st.session_state.pop("tarefa_bko", None)
+        st.query_params.pop("tarefa_bko", None)
         nome_base = Path(arquivo.name).stem if arquivo is not None else "base_bko"
         st.session_state["nome_saida"] = f"{nome_base}_tratado.xlsx"
     except Exception as erro:
         st.session_state.pop("tarefa_bko", None)
-        st.error(f"Não foi possível processar o arquivo: {erro}")
+        st.query_params.pop("tarefa_bko", None)
+        if str(erro) == "A tarefa não está mais disponível no servidor.":
+            st.info("A tarefa anterior expirou após uma reinicialização do servidor. Envie o arquivo novamente.")
+        else:
+            st.error(f"Não foi possível processar o arquivo: {erro}")
 
 if "relatorios" in st.session_state:
     relatorios = st.session_state["relatorios"]
