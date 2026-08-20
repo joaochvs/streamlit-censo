@@ -19,7 +19,7 @@ class Tarefa:
 class GerenciadorTarefas:
     """Mantém tarefas vivas entre reruns e reconexões do Streamlit."""
 
-    def __init__(self, max_workers: int = 2):
+    def __init__(self, max_workers: int = 1):
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
         self._tarefas: dict[str, Tarefa] = {}
         self._lock = threading.Lock()
@@ -43,12 +43,17 @@ class GerenciadorTarefas:
         with self._lock:
             return self._tarefas.get(tarefa_id)
 
+    def remover(self, tarefa_id: str) -> None:
+        """Libera o Future e seu resultado depois que a página o consumiu."""
+        with self._lock:
+            self._tarefas.pop(tarefa_id, None)
+
 
 @st.cache_resource
 def obter_gerenciador_tarefas() -> GerenciadorTarefas:
     # Limita o paralelismo para evitar que muitos usuários esgotem a memória
     # do servidor. As demais tarefas aguardam na fila sem serem perdidas.
-    return GerenciadorTarefas(max_workers=2)
+    return GerenciadorTarefas(max_workers=1)
 
 
 def acompanhar_tarefa(tarefa_id: str):
@@ -65,14 +70,26 @@ def acompanhar_tarefa(tarefa_id: str):
     while not tarefa.futuro.done():
         decorrido = max(0, time.time() - tarefa.inicio)
         minutos, segundos = divmod(int(decorrido), 60)
-        painel.update(label=tarefa.etapa, state="running", expanded=True)
+        aguardando = not tarefa.futuro.running()
+        etapa_exibida = "Aguardando liberação do servidor" if aguardando else tarefa.etapa
+        detalhe_exibido = (
+            "Outra ferramenta está sendo processada. Sua tarefa iniciará automaticamente."
+            if aguardando
+            else tarefa.detalhe
+        )
+        painel.update(label=etapa_exibida, state="running", expanded=True)
         barra.progress(min(100, max(0, int(tarefa.percentual * 100))))
-        detalhes.markdown(f"**{tarefa.detalhe}**" if tarefa.detalhe else "")
+        detalhes.markdown(f"**{detalhe_exibido}**" if detalhe_exibido else "")
         cronometro.markdown(f"⏱️ **Tempo decorrido** &nbsp; `{minutos:02d}:{segundos:02d}`")
         time.sleep(0.5)
 
     # Propaga eventuais erros do processamento para a página.
-    resultado = tarefa.futuro.result()
+    try:
+        resultado = tarefa.futuro.result()
+    finally:
+        # O Future retém todo o resultado em memória. Depois da entrega (ou de
+        # uma falha), ele não deve permanecer no gerenciador global.
+        gerenciador.remover(tarefa_id)
     decorrido = max(0, time.time() - tarefa.inicio)
     minutos, segundos = divmod(int(decorrido), 60)
     barra.progress(100)

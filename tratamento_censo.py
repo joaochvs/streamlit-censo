@@ -239,7 +239,9 @@ def pre_carregar_hashes(urls, cache, progresso=None):
     if not urls_novas: return
     total = len(urls_novas)
     print(f"   📡 Baixando e convertendo {total} fotos exclusivas detectadas...")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as ex:
+    # Mantém o consumo de memória e conexões sob controle no Streamlit Cloud.
+    # A quantidade de imagens e as regras de análise permanecem inalteradas.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
         for concluida, (url, h) in enumerate(ex.map(baixar_hash, urls_novas), start=1):
             cache[url] = h
             if progresso and (concluida == total or concluida % max(1, total // 100) == 0):
