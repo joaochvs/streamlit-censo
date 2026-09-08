@@ -37,8 +37,8 @@ def carregar_municipios(arquivo_bytes):
 with st.container(border=True):
     st.subheader("Arquivo de origem e município")
     arquivo = st.file_uploader(
-        "Relatório Excel com a aba Base_Consolidada",
-        type=["xlsx"],
+        "Relatório Excel com a aba Base_Consolidada ou arquivo CSV",
+        type=["xlsx", "csv"],
         key="arquivo_conferencia",
     )
     municipio = ""
@@ -61,7 +61,7 @@ with st.container(border=True):
             st.error(f"Não foi possível identificar os municípios: {erro}")
 
 if arquivo is None:
-    st.info("📂 Selecione o relatório Excel para carregar os municípios disponíveis.")
+    st.info("📂 Selecione o relatório Excel ou CSV para carregar os municípios disponíveis.")
 else:
     st.caption(f"✓ {arquivo.name}  •  {arquivo.size / (1024 * 1024):.1f} MB")
     if st.button("Gerar conferência", type="primary", use_container_width=True):

@@ -34,16 +34,16 @@ st.markdown(
 
 with st.container(border=True):
     st.subheader("Enviar relatório para liberação")
-    st.caption("O Excel deve conter a aba Base_Consolidada. O template oficial já está incorporado à ferramenta.")
+    st.caption("Aceita Excel com a aba Base_Consolidada ou CSV. O template oficial já está incorporado à ferramenta.")
     arquivo = st.file_uploader(
-        "Selecione o relatório Excel",
-        type=["xlsx"],
+        "Selecione o relatório Excel ou CSV",
+        type=["xlsx", "csv"],
         key="arquivo_liberacao",
         label_visibility="collapsed",
     )
 
 if arquivo is None:
-    st.info("📂 Selecione um relatório Excel para iniciar a liberação.")
+    st.info("📂 Selecione um relatório Excel ou CSV para iniciar a liberação.")
 else:
     st.caption(f"✓ {arquivo.name}  •  {arquivo.size / (1024 * 1024):.1f} MB")
     if st.button("Processar liberação", type="primary", use_container_width=True):

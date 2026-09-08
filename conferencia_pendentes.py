@@ -13,6 +13,8 @@ from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
+from leitura_csv import ler_csv_flexivel
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(errors="replace")
 
@@ -220,7 +222,25 @@ def validar_colunas(df: pd.DataFrame, colunas_obrigatorias: list) -> None:
 
 
 def carregar_base(caminho_arquivo: Path) -> pd.DataFrame:
-    df = pd.read_excel(caminho_arquivo, sheet_name='Base_Consolidada')
+    eh_excel = False
+    conteudo = None
+    if hasattr(caminho_arquivo, 'read'):
+        posicao = caminho_arquivo.tell()
+        assinatura = caminho_arquivo.read(4)
+        caminho_arquivo.seek(posicao)
+        eh_excel = assinatura.startswith(b'PK') or assinatura == b'\xd0\xcf\x11\xe0'
+        if not eh_excel:
+            conteudo = caminho_arquivo.read()
+            caminho_arquivo.seek(posicao)
+    else:
+        eh_excel = str(caminho_arquivo).lower().endswith(('.xlsx', '.xls'))
+
+    if eh_excel:
+        df = pd.read_excel(caminho_arquivo, sheet_name='Base_Consolidada')
+    else:
+        if conteudo is None:
+            conteudo = Path(caminho_arquivo).read_bytes()
+        df = ler_csv_flexivel(conteudo)
     if 'Code Deep' in df.columns:
         df['Code Deep'] = (
             df['Code Deep']
@@ -365,10 +385,9 @@ def montar_lista_agentes(df_base: pd.DataFrame) -> list:
 
 def listar_municipios_pendentes(arquivo_bytes: bytes) -> list[str]:
     """Lista os municípios existentes entre os registros pendentes da base."""
-    fonte = BytesIO(arquivo_bytes)
-    cabecalhos = pd.read_excel(fonte, sheet_name='Base_Consolidada', nrows=0).columns.tolist()
-    col_situacao = next((c for c in COLUNAS_SITUACAO_BACKOFFICE if c in cabecalhos), None)
-    col_municipio = next((c for c in COLUNAS_MUNICIPIO if c in cabecalhos), None)
+    dados = carregar_base(BytesIO(arquivo_bytes))
+    col_situacao = next((c for c in COLUNAS_SITUACAO_BACKOFFICE if c in dados.columns), None)
+    col_municipio = next((c for c in COLUNAS_MUNICIPIO if c in dados.columns), None)
 
     if col_situacao is None:
         raise ErroProcessamento(
@@ -379,12 +398,6 @@ def listar_municipios_pendentes(arquivo_bytes: bytes) -> list[str]:
             f"ERRO: coluna de município não encontrada. Procuradas: {COLUNAS_MUNICIPIO}"
         )
 
-    fonte.seek(0)
-    dados = pd.read_excel(
-        fonte,
-        sheet_name='Base_Consolidada',
-        usecols=[col_situacao, col_municipio],
-    )
     pendentes = dados[col_situacao].fillna('').astype(str).str.strip().str.casefold().eq('pendente')
     municipios = dados.loc[pendentes, col_municipio].dropna().astype(str).str.strip()
     municipios = municipios[(municipios != '') & ~municipios.str.casefold().eq('nan')]

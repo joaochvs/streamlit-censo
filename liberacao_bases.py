@@ -2,7 +2,10 @@ from pathlib import Path
 from copy import copy
 from io import BytesIO
 import sys
-from openpyxl import load_workbook
+import pandas as pd
+from openpyxl import Workbook, load_workbook
+
+from leitura_csv import ler_csv_flexivel
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(errors="replace")
@@ -437,7 +440,20 @@ def processar_liberacao(arquivo_bytes, progresso=None):
             progresso(percentual, etapa, detalhe)
 
     atualizar(0.05, "Abrindo os arquivos", "Carregando o relatório e o template de liberação")
-    wb_origem = load_workbook(BytesIO(arquivo_bytes), data_only=False, read_only=True)
+    if arquivo_bytes[:4].startswith(b"PK") or arquivo_bytes[:4] == b"\xd0\xcf\x11\xe0":
+        wb_origem = load_workbook(BytesIO(arquivo_bytes), data_only=False, read_only=True)
+    else:
+        # CSV não possui abas. Converte seu conteúdo para uma planilha
+        # temporária chamada Base_Consolidada e mantém o restante da lógica.
+        df_origem = ler_csv_flexivel(arquivo_bytes)
+        wb_temporario = Workbook()
+        ws_temporaria = wb_temporario.active
+        ws_temporaria.title = ABA_ORIGEM
+        ws_temporaria.append(df_origem.columns.tolist())
+        for linha in df_origem.itertuples(index=False, name=None):
+            ws_temporaria.append([None if pd.isna(valor) else valor for valor in linha])
+        del df_origem
+        wb_origem = wb_temporario
     wb_saida = load_workbook(template, data_only=False)
 
     try:
