@@ -363,6 +363,34 @@ def montar_lista_agentes(df_base: pd.DataFrame) -> list:
     return sorted(agentes.unique().tolist())
 
 
+def listar_municipios_pendentes(arquivo_bytes: bytes) -> list[str]:
+    """Lista os municípios existentes entre os registros pendentes da base."""
+    fonte = BytesIO(arquivo_bytes)
+    cabecalhos = pd.read_excel(fonte, sheet_name='Base_Consolidada', nrows=0).columns.tolist()
+    col_situacao = next((c for c in COLUNAS_SITUACAO_BACKOFFICE if c in cabecalhos), None)
+    col_municipio = next((c for c in COLUNAS_MUNICIPIO if c in cabecalhos), None)
+
+    if col_situacao is None:
+        raise ErroProcessamento(
+            f"ERRO: coluna de situação do Backoffice não encontrada. Procuradas: {COLUNAS_SITUACAO_BACKOFFICE}"
+        )
+    if col_municipio is None:
+        raise ErroProcessamento(
+            f"ERRO: coluna de município não encontrada. Procuradas: {COLUNAS_MUNICIPIO}"
+        )
+
+    fonte.seek(0)
+    dados = pd.read_excel(
+        fonte,
+        sheet_name='Base_Consolidada',
+        usecols=[col_situacao, col_municipio],
+    )
+    pendentes = dados[col_situacao].fillna('').astype(str).str.strip().str.casefold().eq('pendente')
+    municipios = dados.loc[pendentes, col_municipio].dropna().astype(str).str.strip()
+    municipios = municipios[(municipios != '') & ~municipios.str.casefold().eq('nan')]
+    return sorted(municipios.unique().tolist(), key=normalizar_texto)
+
+
 # ==========================================================================
 # Utilitários de coluna
 # ==========================================================================

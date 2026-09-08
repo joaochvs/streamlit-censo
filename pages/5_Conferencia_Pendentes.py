@@ -1,9 +1,8 @@
 import re
-from pathlib import Path
 
 import streamlit as st
 
-from conferencia_pendentes import processar_conferencia
+from conferencia_pendentes import listar_municipios_pendentes, processar_conferencia
 from tarefas_background import acompanhar_tarefa, obter_gerenciador_tarefas
 
 
@@ -30,26 +29,48 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+@st.cache_data(show_spinner=False)
+def carregar_municipios(arquivo_bytes):
+    return listar_municipios_pendentes(arquivo_bytes)
+
+
 with st.container(border=True):
-    st.subheader("Município e arquivo de origem")
-    municipio = st.text_input("Município", placeholder="Ex.: Campinas", key="municipio_conferencia")
+    st.subheader("Arquivo de origem e município")
     arquivo = st.file_uploader(
         "Relatório Excel com a aba Base_Consolidada",
         type=["xlsx"],
         key="arquivo_conferencia",
     )
+    municipio = ""
+    if arquivo is not None:
+        try:
+            with st.spinner("Identificando municípios com pendências..."):
+                municipios = carregar_municipios(arquivo.getvalue())
+            if municipios:
+                municipio = st.selectbox(
+                    "Município",
+                    options=municipios,
+                    index=None,
+                    placeholder="Selecione um município da base",
+                    key="municipio_conferencia",
+                ) or ""
+                st.caption(f"{len(municipios)} município(s) com registros pendentes encontrado(s).")
+            else:
+                st.warning("A base não possui municípios com registros pendentes.")
+        except Exception as erro:
+            st.error(f"Não foi possível identificar os municípios: {erro}")
 
 if arquivo is None:
-    st.info("📂 Informe o município e selecione o relatório Excel.")
+    st.info("📂 Selecione o relatório Excel para carregar os municípios disponíveis.")
 else:
     st.caption(f"✓ {arquivo.name}  •  {arquivo.size / (1024 * 1024):.1f} MB")
     if st.button("Gerar conferência", type="primary", use_container_width=True):
-        if not municipio.strip():
-            st.warning("Informe o município antes de iniciar o processamento.")
+        if not municipio:
+            st.warning("Selecione um município da lista antes de iniciar o processamento.")
         else:
             for chave in ("conferencia_resultado", "conferencia_excel"):
                 st.session_state.pop(chave, None)
-            payload = (arquivo.getvalue(), municipio.strip())
+            payload = (arquivo.getvalue(), municipio)
             tarefa_id = obter_gerenciador_tarefas().iniciar(processar_conferencia, payload)
             st.session_state["tarefa_conferencia"] = tarefa_id
             st.query_params["tarefa_conferencia"] = tarefa_id
@@ -60,7 +81,7 @@ if tarefa_id and "conferencia_resultado" not in st.session_state:
         resultado, excel = acompanhar_tarefa(tarefa_id)
         st.session_state["conferencia_resultado"] = resultado
         st.session_state["conferencia_excel"] = excel
-        municipio_nome = municipio.strip() if municipio.strip() else "municipio"
+        municipio_nome = municipio if municipio else "municipio"
         nome_seguro = re.sub(r"[^A-Za-z0-9_-]+", "_", municipio_nome).strip("_") or "municipio"
         st.session_state["conferencia_nome"] = f"Conferencia_{nome_seguro}.xlsx"
         st.session_state.pop("tarefa_conferencia", None)
