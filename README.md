@@ -1,8 +1,11 @@
 # Ferramentas de Censo
 
-Aplicativo Streamlit com duas ferramentas:
+Aplicativo Streamlit com cinco ferramentas:
 
-- tratamento e auditoria de bases de censo;
+- tratamento e auditoria de Bases BKO;
+- identificação de desmembramentos;
+- geração de bases de liberação no template oficial;
+- geração da conferência de pendentes por município;
 - comparação da produtividade informada pelos agentes com a produtividade do sistema.
 
 ## Executar localmente
