@@ -22,6 +22,16 @@ pagina = st.navigation(
                 icon="🔀",
             ),
             st.Page(
+                "pages/4_Liberacao_Bases.py",
+                title="Liberação de Bases",
+                icon="📦",
+            ),
+            st.Page(
+                "pages/5_Conferencia_Pendentes.py",
+                title="Conferência de Pendentes",
+                icon="📋",
+            ),
+            st.Page(
                 "pages/2_Produtividade_Agentes.py",
                 title="Produtividade dos Agentes",
                 icon="📈",
